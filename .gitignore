@@ -1,0 +1,102 @@
+# Dependencies
+node_modules/
+jspm_packages/
+bower_components/
+
+# Build
+dist/
+build/
+out/
+*.tsbuildinfo
+.next/
+.nuxt/
+.vuepress/dist
+.docusaurus
+.serverless/
+.fusebox/
+.dynamodb/
+
+# Testing
+coverage/
+.nyc_output/
+lib-cov/
+*.lcov
+
+# IDE
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.history/
+*.code-workspace
+.project
+.settings/
+.classpath
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+.directory
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+.env.staging
+*.local
+
+# Logs
+logs/
+*.log
+log.txt
+npm-debug.log*
+
+# Cache
+.cache/
+.npm/
+
+# Misc
+.tmp/
+temp/
+
+# Misc
+*.sass-cache
+.eslintcache
+.stylelintcache
+*.swp
+*.swo
+*~
+
+# Debug
+.chrome/
+.vscode-test/
+.vscode-test-web/
+
+# Other
+.git/
+*.bak
+*.orig
+.vercel
+.now
+.env*.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Project Specific
+# Add project specific ignore rules here 

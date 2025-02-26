@@ -1,0 +1,44 @@
+{
+  "name": "browser-monitor",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A browser monitoring tool based on Chrome DevTools Protocol",
+  "main": "dist/server/index.js",
+  "types": "dist/server/index.d.ts",
+  "bin": {
+    "browser-monitor": "dist/server/index.js"
+  },
+  "scripts": {
+    "start": "node dist/server/index.js",
+    "dev": "ts-node-esm src/server/index.ts",
+    "test": "ts-node --esm src/test/browser-monitor-test.ts",
+    "test:network": "ts-node --esm src/test/network/network-test.ts",
+    "test:page": "ts-node --esm src/test/page/page-test.ts",
+    "test:dom": "ts-node --esm src/test/dom/dom-test.ts",
+    "test:console": "ts-node --esm src/test/console/console-test.ts",
+    "build": "tsc",
+    "watch": "tsc -w",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "check": "biome check --apply .",
+    "check:ci": "biome ci .",
+    "fix": "biome check --apply-unsafe .",
+    "format:check": "biome format --check ."
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "chrome-remote-interface": "^0.33.0",
+    "puppeteer-core": "^21.0.0",
+    "zod": "^3.22.0"
+  },
+  "keywords": ["browser", "monitor", "devtools", "chrome", "edge", "debugging"],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/chrome-remote-interface": "^0.31.14",
+    "@types/node": "^20.17.19",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
