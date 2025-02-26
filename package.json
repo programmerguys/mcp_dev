@@ -13,6 +13,8 @@
     "dev": "ts-node-esm src/server/index.ts",
     "test": "ts-node --esm src/test/browser-monitor-test.ts",
     "test:network": "ts-node --esm src/test/network/network-test.ts",
+    "test:network:query": "ts-node --esm src/test/network/network-query-test.ts",
+    "test:network:monitor": "ts-node --esm src/test/network/network-monitor-test.ts",
     "test:page": "ts-node --esm src/test/page/page-test.ts",
     "test:dom": "ts-node --esm src/test/dom/dom-test.ts",
     "test:console": "ts-node --esm src/test/console/console-test.ts",

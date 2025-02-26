@@ -1,10 +1,9 @@
 import { ConsoleTest } from './console/console-test.js';
 import { DOMTest } from './dom/dom-test.js';
-import { NetworkTest } from './network/network-test.js';
 import { PageTest } from './page/page-test.js';
 
 async function runTests(): Promise<void> {
-  const tests = [new NetworkTest(), new PageTest(), new DOMTest(), new ConsoleTest()];
+  const tests = [new PageTest(), new DOMTest(), new ConsoleTest()];
 
   for (const test of tests) {
     await test.run();
