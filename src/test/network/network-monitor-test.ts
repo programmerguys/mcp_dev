@@ -1,4 +1,4 @@
-import type { NetworkRequest } from '../../server/types.js';
+import type { NetworkRequest } from '../../types/index.js';
 import { BaseTest } from '../base-test.js';
 
 export class NetworkMonitorTest extends BaseTest {

@@ -2,7 +2,7 @@
   "name": "browser-monitor",
   "version": "1.0.0",
   "type": "module",
-  "description": "A browser monitoring tool based on Chrome DevTools Protocol",
+  "description": "A browser monitoring tool based on Chrome DevTools Protocol with MCP support",
   "main": "dist/server/index.js",
   "types": "dist/server/index.d.ts",
   "bin": {
@@ -10,14 +10,17 @@
   },
   "scripts": {
     "start": "node dist/server/index.js",
-    "dev": "ts-node-esm src/server/index.ts",
-    "test": "ts-node --esm src/test/browser-monitor-test.ts",
-    "test:network": "ts-node --esm src/test/network/network-test.ts",
-    "test:network:query": "ts-node --esm src/test/network/network-query-test.ts",
-    "test:network:monitor": "ts-node --esm src/test/network/network-monitor-test.ts",
-    "test:page": "ts-node --esm src/test/page/page-test.ts",
-    "test:dom": "ts-node --esm src/test/dom/dom-test.ts",
-    "test:console": "ts-node --esm src/test/console/console-test.ts",
+    "dev": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/server/index.ts",
+    "test": "ts-node-esm src/test/browser-monitor-test.ts",
+    "test:network": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/network/network-test.ts",
+    "test:network:query": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/network/network-query-test.ts",
+    "test:network:monitor": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/network/network-monitor-test.ts",
+    "test:network:mcp": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/network/mcp-client-test.ts",
+    "test:network:sse": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/network/sse-client-test.ts",
+    "test:page": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/page/page-test.ts",
+    "test:dom": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/dom/dom-test.ts",
+    "test:console": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/console/console-test.ts",
+    "test:inspector": "node --import 'data:text/javascript,import { register } from \"node:module\"; import { pathToFileURL } from \"node:url\"; register(\"ts-node/esm\", pathToFileURL(\"./\"));' src/test/inspector/inspector-test.ts",
     "build": "tsc",
     "watch": "tsc -w",
     "format": "biome format --write .",
@@ -28,12 +31,14 @@
     "format:check": "biome format --check ."
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "@types/better-sqlite3": "^7.6.12",
+    "better-sqlite3": "^11.8.1",
     "chrome-remote-interface": "^0.33.0",
     "puppeteer-core": "^21.0.0",
     "zod": "^3.22.0"
   },
-  "keywords": ["browser", "monitor", "devtools", "chrome", "edge", "debugging"],
+  "keywords": ["browser", "monitor", "devtools", "chrome", "edge", "debugging", "mcp"],
   "author": "",
   "license": "MIT",
   "devDependencies": {
@@ -41,6 +46,6 @@
     "@types/chrome-remote-interface": "^0.31.14",
     "@types/node": "^20.17.19",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.7.3"
   }
 }

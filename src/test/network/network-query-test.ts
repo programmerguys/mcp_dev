@@ -1,4 +1,4 @@
-import type { NetworkRequest } from '../../server/types.js';
+import type { NetworkRequest } from '../../types/index.js';
 import { BaseTest } from '../base-test.js';
 
 export class NetworkQueryTest extends BaseTest {
@@ -6,72 +6,88 @@ export class NetworkQueryTest extends BaseTest {
     super('网络请求查询');
   }
 
-  protected async runTest(): Promise<void> {
-    try {
-      // 等待一些网络请求产生
-      console.log('1. 等待网络请求产生...');
-      console.log('请在浏览器中访问任意网站');
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+  private formatNetworkRequest(request: NetworkRequest): string {
+    return `
+    请求ID: ${request.id}
+    类型: ${request.type}
+    方法: ${request.method || 'N/A'}
+    URL: ${request.url || 'N/A'}
+    状态: ${request.status || 'Pending'}
+    时间: ${request.timestamp}
+    请求头: ${JSON.stringify(request.headers, null, 2)}
+    响应体大小: ${request.body ? Buffer.from(request.body).length : 0} bytes
+    `;
+  }
 
-      // 获取活跃的网络请求
-      console.log('\n2. 获取当前活跃的网络请求...');
+  private printRequestsSummary(requests: NetworkRequest[]): void {
+    // 按类型统计请求
+    const typeStats = requests.reduce(
+      (acc, req) => {
+        acc[req.type] = (acc[req.type] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    console.log('\n=== 网络请求统计 ===');
+    console.log(`总请求数: ${requests.length}`);
+    console.log('\n请求类型分布:');
+    for (const [type, count] of Object.entries(typeStats)) {
+      console.log(`${type}: ${count}个请求`);
+    }
+    console.log('==================\n');
+  }
+
+  private async testGetActiveRequests(): Promise<void> {
+    try {
+      console.log('\n开始获取活跃的网络请求...');
+
       const activeRequests = await this.monitor.getActiveNetworkRequests();
 
       if (activeRequests.length === 0) {
-        console.log('⚠️ 未检测到任何网络请求');
-      } else {
-        console.log(`✓ 检测到 ${activeRequests.length} 个网络请求\n`);
-
-        // 按类型统计请求
-        const typeStats = activeRequests.reduce(
-          (acc, req) => {
-            acc[req.type] = (acc[req.type] || 0) + 1;
-            return acc;
-          },
-          {} as Record<string, number>,
-        );
-
-        console.log('请求类型统计:');
-        console.log(JSON.stringify(typeStats, null, 2));
-
-        // 显示详细请求信息
-        console.log('\n请求详细信息:');
-        activeRequests.forEach((request, index) => {
-          console.log(`\n--- 请求 #${index + 1} ---`);
-          console.log(
-            JSON.stringify(
-              {
-                id: request.id,
-                type: request.type,
-                method: request.method,
-                url: request.url,
-                status: request.status,
-                timestamp: request.timestamp,
-                headers: request.headers,
-                contentLength: request.body?.length || 0,
-              },
-              null,
-              2,
-            ),
-          );
-        });
+        console.log('⚠️  当前没有活跃的网络请求');
+        return;
       }
 
-      // 测试性能指标
-      console.log('\n3. 获取性能指标...');
-      const metrics = await this.monitor.getPerformanceMetrics();
-      console.log('✓ 性能指标:');
-      console.log(JSON.stringify(metrics, null, 2));
+      // 打印统计信息
+      this.printRequestsSummary(activeRequests);
 
-      // 获取所有 Cookie
-      console.log('\n4. 获取所有 Cookie...');
-      const cookies = await this.monitor.getAllCookies();
-      console.log('✓ Cookie 列表:');
-      console.log(JSON.stringify(cookies, null, 2));
+      // 打印详细请求信息
+      console.log('=== 详细请求信息 ===');
+      activeRequests.forEach((request, index) => {
+        console.log(`\n--- 请求 #${index + 1} ---${this.formatNetworkRequest(request)}`);
+      });
+      console.log('==================\n');
     } catch (error) {
-      console.error('测试过程中出错:', error);
+      console.error('❌ 获取网络请求失败:', error instanceof Error ? error.message : String(error));
       throw error;
     }
+  }
+
+  protected async runTest(): Promise<void> {
+    await this.testGetActiveRequests();
+
+    // 获取性能指标
+    console.log('\n=== 获取性能指标 ===');
+    try {
+      const metrics = await this.monitor.getPerformanceMetrics();
+      console.log('✓ 性能指标数据:');
+      console.log(JSON.stringify(metrics, null, 2));
+    } catch (error) {
+      console.error('❌ 获取性能指标失败:', error instanceof Error ? error.message : String(error));
+    }
+    console.log('==================\n');
+
+    // 获取Cookies
+    console.log('=== 获取Cookies ===');
+    try {
+      const cookies = await this.monitor.getAllCookies();
+      console.log('✓ Cookie数据:');
+      console.log(JSON.stringify(cookies, null, 2));
+    } catch (error) {
+      console.error('❌ 获取Cookies失败:', error instanceof Error ? error.message : String(error));
+    }
+    console.log('==================\n');
   }
 
   private formatBytes(bytes: number): string {

@@ -1,7 +1,8 @@
 import CDP from 'chrome-remote-interface';
 import type { Client, Options } from 'chrome-remote-interface';
 import type { Browser } from 'puppeteer-core';
-import type { BrowserOptions, NetworkRequest, PageElement } from './types.js';
+import { RequestDatabase, type RequestQuery } from '../core/database.js';
+import type { BrowserOptions, NetworkRequest, PageElement, RequestFilter } from '../types/index.js';
 
 type ConsoleCallback = (level: string, message: string) => void;
 type NetworkCallback = (request: NetworkRequest) => void;
@@ -37,6 +38,16 @@ interface ResponseReceivedEvent {
     status: number;
     headers: Record<string, string>;
   };
+}
+
+interface LoadingFinishedEvent {
+  requestId: string;
+  encodedDataLength: number;
+}
+
+interface LoadingFailedEvent {
+  requestId: string;
+  errorText: string;
 }
 
 interface BaseDOMNode {
@@ -96,6 +107,22 @@ interface Cookie {
   session?: boolean;
 }
 
+interface NetworkDomain {
+  enable(): Promise<void>;
+  requestWillBeSent(handler: (params: RequestWillBeSentEvent) => void): void;
+  responseReceived(handler: (params: ResponseReceivedEvent) => void): void;
+  loadingFinished(handler: (params: LoadingFinishedEvent) => void): void;
+  loadingFailed(handler: (params: LoadingFailedEvent) => void): void;
+  getResponseBody(params: { requestId: string }): Promise<{ body: string }>;
+}
+
+interface PageDomain {
+  enable(): Promise<void>;
+  reload(): Promise<void>;
+  getResourceTree(): Promise<ResourceTree>;
+  captureScreenshot(params: { format: string }): Promise<{ data: string }>;
+}
+
 export class BrowserMonitor {
   private client: Client | null;
   private browser: Browser | null;
@@ -103,14 +130,21 @@ export class BrowserMonitor {
   private networkCallback: NetworkCallback | null;
   private connected: boolean;
   private networkRequests: Map<string, NetworkRequest>;
+  private requestDb: RequestDatabase;
+  private requestFilter: RequestFilter;
 
-  constructor() {
+  constructor(dbPath?: string) {
     this.client = null;
     this.browser = null;
     this.consoleCallback = null;
     this.networkCallback = null;
     this.connected = false;
     this.networkRequests = new Map();
+    this.requestDb = new RequestDatabase(dbPath);
+    this.requestFilter = {
+      urlPattern: null,
+      types: null,
+    };
   }
 
   setConsoleCallback(callback: ConsoleCallback): void {
@@ -119,6 +153,34 @@ export class BrowserMonitor {
 
   setNetworkCallback(callback: NetworkCallback): void {
     this.networkCallback = callback;
+  }
+
+  setRequestFilter(filter: Partial<RequestFilter>): void {
+    this.requestFilter = {
+      urlPattern: filter.urlPattern ?? null,
+      types: filter.types ?? null,
+    };
+  }
+
+  private shouldProcessRequest(request: NetworkRequest): boolean {
+    if (!this.requestFilter.urlPattern && !this.requestFilter.types) {
+      return true;
+    }
+
+    if (this.requestFilter.urlPattern) {
+      try {
+        return new RegExp(this.requestFilter.urlPattern).test(request.url);
+      } catch (error) {
+        console.warn('Invalid URL pattern:', error);
+        return false;
+      }
+    }
+
+    if (this.requestFilter.types) {
+      return this.requestFilter.types.includes(request.type);
+    }
+
+    return true;
   }
 
   // 获取所有活跃的网络请求
@@ -141,13 +203,15 @@ export class BrowserMonitor {
   // 获取页面资源树
   async getResourceTree(): Promise<ResourceTree> {
     if (!this.client) throw new Error('Not connected');
-    return await this.client.Page.getResourceTree();
+    const page = this.client.Page as unknown as PageDomain;
+    return await page.getResourceTree();
   }
 
   // 截取页面截图
   async captureScreenshot(format: 'png' | 'jpeg' = 'png'): Promise<string> {
     if (!this.client) throw new Error('Not connected');
-    const result = await this.client.Page.captureScreenshot({ format });
+    const page = this.client.Page as unknown as PageDomain;
+    const result = await page.captureScreenshot({ format });
     return result.data;
   }
 
@@ -165,45 +229,72 @@ export class BrowserMonitor {
       const targets = await list({ port });
       console.log('可用的调试目标:', targets);
 
-      if (targets.length === 0) {
-        throw new Error('没有找到可用的调试目标');
-      }
-
-      const target = targets.find(
+      // 筛选出所有普通网页（排除 DevTools 页面和 worker）
+      const pageTargets = targets.filter(
         (t: CDPTarget) =>
           t.type === 'page' && !t.url.startsWith('devtools://') && !t.title?.startsWith('DevTools'),
       );
 
-      if (!target) {
+      if (pageTargets.length === 0) {
         throw new Error('没有找到可用的页面目标');
       }
 
-      console.log('正在连接到目标:', {
-        id: target.id,
-        title: target.title,
-        url: target.url,
-      });
+      // 连接到所有页面
+      console.log('找到以下可监控的页面:');
+      for (const target of pageTargets) {
+        console.log(`- ${target.title} (${target.url})`);
+      }
+
+      // 选择第一个页面作为主连接（为了保持兼容性）
+      const mainTarget = pageTargets[0];
+      console.log(`\n选择主连接页面: ${mainTarget.title}`);
 
       this.client = await CDP({
         port,
-        target: target.id,
+        target: mainTarget.id,
       });
 
       this.connected = true;
 
       const { Network, Console, DOM, Page, Runtime, Performance } = this.client;
+      const page = Page as unknown as PageDomain;
 
       console.log('正在启用必要的域...');
       await Promise.all([
         Network.enable(),
         Console.enable(),
         DOM.enable(),
-        Page.enable(),
+        page.enable(),
         Runtime.enable(),
         Performance.enable(),
       ]);
-      console.log('域已启用');
 
+      // 为其他页面创建额外的 CDP 连接
+      for (let i = 1; i < pageTargets.length; i++) {
+        const target = pageTargets[i];
+        console.log(`\n连接到额外页面: ${target.title}`);
+
+        try {
+          const additionalClient = await CDP({
+            port,
+            target: target.id,
+          });
+
+          // 为额外页面启用网络监控
+          const { Network } = additionalClient;
+          await Network.enable();
+
+          // 设置网络请求监听
+          this.setupNetworkListeners(Network, `[${target.title}] `);
+        } catch (error) {
+          console.error(`连接到页面 ${target.title} 失败:`, error);
+        }
+      }
+
+      // 设置主连接的网络请求监听
+      this.setupNetworkListeners(Network);
+
+      // 设置控制台监听
       Runtime.consoleAPICalled((params: ConsoleAPICalledParams) => {
         console.log('收到控制台消息:', params);
         if (this.consoleCallback) {
@@ -212,51 +303,76 @@ export class BrowserMonitor {
         }
       });
 
-      Network.requestWillBeSent(({ requestId, request, type }: RequestWillBeSentEvent) => {
-        console.log('检测到网络请求:', requestId);
-        const networkRequest: NetworkRequest = {
-          id: requestId,
-          type: type.toLowerCase(),
-          method: request.method,
-          url: request.url,
-          headers: request.headers,
-          timestamp: new Date().toISOString(),
-        };
-        this.networkRequests.set(requestId, networkRequest);
-        if (this.networkCallback) {
-          this.networkCallback(networkRequest);
-        }
-      });
-
-      Network.responseReceived(async ({ requestId, response }: ResponseReceivedEvent) => {
-        console.log('收到网络响应:', requestId);
-        if (this.networkCallback) {
-          try {
-            const responseBody = await Network.getResponseBody({ requestId });
-            const networkRequest = this.networkRequests.get(requestId);
-            if (networkRequest) {
-              const updatedRequest: NetworkRequest = {
-                ...networkRequest,
-                type: 'response',
-                status: response.status,
-                headers: response.headers,
-                body: responseBody.body,
-                timestamp: new Date().toISOString(),
-              };
-              this.networkRequests.set(requestId, updatedRequest);
-              this.networkCallback(updatedRequest);
-            }
-          } catch (error) {
-            console.error('获取响应体失败:', error);
-          }
-        }
-      });
-
-      console.log('成功连接到浏览器并设置了所有监听器');
+      console.log('所有域已启用');
     } catch (err) {
       console.error('连接到浏览器时出错:', err);
       throw err;
     }
+  }
+
+  private setupNetworkListeners(Network: NetworkDomain, prefix = ''): void {
+    Network.requestWillBeSent((params: RequestWillBeSentEvent) => {
+      const requestId = prefix + params.requestId;
+      const request: NetworkRequest = {
+        id: requestId,
+        timestamp: new Date().toISOString(),
+        method: params.request.method,
+        url: params.request.url,
+        headers: params.request.headers,
+        type: params.type,
+        status: 0,
+        responseHeaders: {},
+        responseSize: 0,
+        error: '',
+      };
+
+      this.networkRequests.set(requestId, request);
+    });
+
+    Network.responseReceived((params: ResponseReceivedEvent) => {
+      const requestId = prefix + params.requestId;
+      const request = this.networkRequests.get(requestId);
+      if (request) {
+        request.status = params.response.status;
+        request.responseHeaders = params.response.headers;
+
+        if (this.shouldProcessRequest(request) && this.networkCallback) {
+          this.networkCallback(request);
+        }
+      }
+    });
+
+    Network.loadingFinished((params: LoadingFinishedEvent) => {
+      const requestId = prefix + params.requestId;
+      const request = this.networkRequests.get(requestId);
+      if (request) {
+        request.responseSize = params.encodedDataLength;
+
+        if (this.shouldProcessRequest(request) && this.networkCallback) {
+          this.networkCallback(request);
+        }
+      }
+    });
+
+    Network.loadingFailed((params: LoadingFailedEvent) => {
+      const requestId = prefix + params.requestId;
+      const request = this.networkRequests.get(requestId);
+      if (request) {
+        request.error = params.errorText || '未知错误';
+
+        if (this.shouldProcessRequest(request) && this.networkCallback) {
+          this.networkCallback(request);
+        }
+      }
+    });
+  }
+
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${Number.parseFloat((bytes / k ** i).toFixed(2))} ${sizes[i]}`;
   }
 
   async getPageElements(selector = '*', includeChildren = true): Promise<PageElement[]> {
@@ -315,6 +431,32 @@ export class BrowserMonitor {
     }
   }
 
+  // 添加刷新页面的公共方法
+  async reloadPage(): Promise<void> {
+    if (!this.connected || !this.client) {
+      throw new Error('未连接到浏览器');
+    }
+    const page = this.client.Page as unknown as PageDomain;
+    await page.reload();
+  }
+
+  // 添加新的查询方法
+  async queryRequests(query: RequestQuery): Promise<NetworkRequest[]> {
+    return this.requestDb.queryRequests(query);
+  }
+
+  async getRequestStats(): Promise<{
+    totalCount: number;
+    typeStats: Record<string, number>;
+    statusStats: Record<string, number>;
+  }> {
+    return this.requestDb.getRequestStats();
+  }
+
+  async clearOldRequests(days: number): Promise<number> {
+    return this.requestDb.clearOldRequests(days);
+  }
+
   async disconnect(): Promise<void> {
     if (this.client) {
       await this.client.close();
@@ -326,5 +468,11 @@ export class BrowserMonitor {
     }
     this.connected = false;
     this.networkRequests.clear();
+    this.requestDb.close();
+  }
+
+  // 添加公共方法用于保存请求
+  async saveRequest(request: NetworkRequest): Promise<void> {
+    await this.requestDb.saveRequest(request);
   }
 }

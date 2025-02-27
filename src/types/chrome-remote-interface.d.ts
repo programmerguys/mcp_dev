@@ -25,11 +25,26 @@ declare module 'chrome-remote-interface' {
     };
   }
 
+  export interface LoadingFinishedParams {
+    requestId: string;
+    encodedDataLength: number;
+    timestamp: number;
+  }
+
+  export interface LoadingFailedParams {
+    requestId: string;
+    errorText: string;
+    canceled?: boolean;
+    blockedReason?: string;
+  }
+
   export interface Client {
     Network: {
       enable: () => Promise<void>;
       requestWillBeSent: (callback: (params: RequestWillBeSentParams) => void) => void;
       responseReceived: (callback: (params: ResponseReceivedParams) => void) => void;
+      loadingFinished: (callback: (params: LoadingFinishedParams) => void) => void;
+      loadingFailed: (callback: (params: LoadingFailedParams) => void) => void;
       getResponseBody: (params: { requestId: string }) => Promise<{ body: string }>;
       getAllCookies: () => Promise<{
         cookies: Array<{ name: string; value: string; domain: string }>;
