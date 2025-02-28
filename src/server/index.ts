@@ -1,5 +1,29 @@
 #!/usr/bin/env node
 
+/**
+ * 浏览器监控服务器
+ * 提供基于 MCP (Model Context Protocol) 的浏览器监控服务
+ * 
+ * 主要功能：
+ * 1. 提供 SSE 实时通信 - 支持服务器推送事件
+ * 2. 处理网络请求监控 - 实时捕获和分析网络请求
+ * 3. 提供 HTTP API 接口 - RESTful API支持
+ * 4. 管理浏览器连接 - 多页面监控支持
+ * 
+ * 技术特点：
+ * - 使用 SSE 实现实时通信
+ * - 支持 CORS 跨域请求
+ * - 支持请求过滤和统计
+ * - 优雅的错误处理
+ * - 完整的生命周期管理
+ * 
+ * 使用示例：
+ * ```typescript
+ * const server = new BrowserMonitorServer();
+ * await server.start();
+ * ```
+ */
+
 import { EventEmitter } from 'node:events';
 import { type IncomingMessage, type ServerResponse, createServer } from 'node:http';
 import { Readable } from 'node:stream';
@@ -9,18 +33,45 @@ import { z } from 'zod';
 import type { NetworkRequest, RequestFilter } from '../types/index.js';
 import { BrowserMonitor } from './browser-monitor.js';
 
+/** 
+ * 网络事件接口
+ * 定义网络请求事件的数据结构
+ */
 interface NetworkEvent {
-  type: 'request';
-  data: NetworkRequest;
+  type: 'request';     // 事件类型，目前只支持 'request'
+  data: NetworkRequest; // 请求数据对象
 }
 
+/**
+ * 浏览器监控服务器类
+ * 负责管理浏览器监控实例和处理客户端请求
+ * 
+ * 主要职责：
+ * 1. 管理 MCP 服务器实例
+ * 2. 处理 SSE 连接
+ * 3. 管理浏览器监控实例
+ * 4. 处理网络请求事件
+ * 5. 提供 HTTP API
+ */
 class BrowserMonitorServer {
-  private server: McpServer;
-  private browserMonitor: BrowserMonitor;
-  private eventEmitter: EventEmitter;
-  private transport: SSEServerTransport | null;
+  private server: McpServer;                    // MCP服务器实例
+  private browserMonitor: BrowserMonitor;       // 浏览器监控实例
+  private eventEmitter: EventEmitter;           // 事件发射器
+  private transport: SSEServerTransport | null; // SSE传输实例
 
+  /**
+   * 构造函数
+   * 初始化服务器和监控实例
+   * 
+   * 执行步骤：
+   * 1. 创建 MCP 服务器
+   * 2. 初始化事件发射器
+   * 3. 创建浏览器监控实例
+   * 4. 设置网络请求回调
+   * 5. 初始化各个组件
+   */
   constructor() {
+    // 创建MCP服务器
     this.server = new McpServer({
       name: 'browser-monitor',
       version: '1.0.0',
@@ -36,19 +87,25 @@ class BrowserMonitorServer {
       this.eventEmitter.emit('network_request', request);
     });
 
-    // 设置各种工具和资源
+    // 初始化各个组件
     this.setupTools();
     this.setupResources();
     this.setupEventHandlers();
-
-    // 设置进程退出处理
     this.setupProcessHandlers();
   }
 
+  /**
+   * 设置MCP工具
+   * 配置可供客户端调用的工具命令
+   * 
+   * 支持的工具：
+   * 1. start_monitoring - 启动监控
+   * 2. stop_monitoring - 停止监控
+   */
   private setupTools(): void {
     console.log('设置 MCP 工具...');
 
-    // 开始监控网络请求
+    // 启动监控工具
     this.server.tool(
       'start_monitoring',
       {
@@ -62,7 +119,7 @@ class BrowserMonitorServer {
           await this.browserMonitor.connect({ port: params.port });
           console.log('成功连接到浏览器');
 
-          // 设置过滤器
+          // 设置请求过滤器
           const filter: RequestFilter = {
             urlPattern: params.urlPattern ?? null,
             types: params.types ?? null,
@@ -90,7 +147,7 @@ class BrowserMonitorServer {
       },
     );
 
-    // 停止监控
+    // 停止监控工具
     this.server.tool('stop_monitoring', {}, async () => {
       console.log('执行 stop_monitoring 工具');
       try {
@@ -113,16 +170,23 @@ class BrowserMonitorServer {
     console.log('MCP 工具设置完成');
   }
 
+  /**
+   * 设置MCP资源
+   * 配置可供客户端访问的资源
+   * 
+   * 支持的资源：
+   * 1. network_stream - 网络请求流，提供实时请求数据
+   */
   private setupResources(): void {
     console.log('设置 MCP 资源...');
 
-    // 实时网络请求流
+    // 实时网络请求流资源
     this.server.resource('network_stream', 'monitor://network/stream', () => {
       console.log('访问 network_stream 资源');
       return new Promise((resolve) => {
         const requests: NetworkRequest[] = [];
 
-        // 收集最近的请求
+        // 监听并收集网络请求
         const listener = (request: NetworkRequest) => {
           console.log('收到新的网络请求:', {
             id: request.id,
@@ -131,7 +195,7 @@ class BrowserMonitorServer {
             type: request.type,
           });
           requests.push(request);
-          // 保持最近 100 条记录
+          // 限制缓存大小
           if (requests.length > 100) {
             requests.shift();
           }
@@ -150,7 +214,7 @@ class BrowserMonitorServer {
           ],
         });
 
-        // 当有新请求时，通过 SSE 推送
+        // 通过SSE推送新请求
         this.eventEmitter.on('network_request', (request: NetworkRequest) => {
           console.log('推送新的网络请求事件');
           const event: NetworkEvent = {
@@ -174,6 +238,13 @@ class BrowserMonitorServer {
     console.log('MCP 资源设置完成');
   }
 
+  /**
+   * 设置事件处理器
+   * 处理客户端连接和断开事件
+   * 
+   * 支持的事件：
+   * - client_disconnect: 客户端断开连接时触发
+   */
   private setupEventHandlers(): void {
     // 处理客户端断开连接
     this.eventEmitter.on('client_disconnect', async () => {
@@ -181,6 +252,13 @@ class BrowserMonitorServer {
     });
   }
 
+  /**
+   * 设置进程处理器
+   * 处理进程退出等系统事件
+   * 
+   * 支持的信号：
+   * - SIGINT: 进程中断信号（Ctrl+C）
+   */
   private setupProcessHandlers(): void {
     process.on('SIGINT', async () => {
       await this.browserMonitor.disconnect();
@@ -189,6 +267,14 @@ class BrowserMonitorServer {
     });
   }
 
+  /**
+   * 处理POST请求
+   * 处理客户端发送的POST请求数据
+   * 
+   * @param req - HTTP请求对象
+   * @param res - HTTP响应对象
+   * @throws 如果请求处理失败
+   */
   private async handlePost(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
       console.log('收到 POST 请求:', {
@@ -201,13 +287,14 @@ class BrowserMonitorServer {
         console.log('找到活动的 SSE 传输，处理 POST 消息');
         console.log('原始请求头:', JSON.stringify(req.headers, null, 2));
 
-        // 创建一个可重用的请求体缓冲区
+        // 收集请求体数据
         const chunks: Buffer[] = [];
         req.on('data', (chunk) => {
           console.log('接收到数据块，大小:', chunk.length);
           chunks.push(Buffer.from(chunk));
         });
 
+        // 等待数据接收完成
         await new Promise((resolve, reject) => {
           req.on('end', () => {
             console.log('请求数据接收完成');
@@ -223,31 +310,31 @@ class BrowserMonitorServer {
         console.log('POST 请求体:', body.toString());
         console.log('请求体大小:', body.length);
 
-        // 创建一个完整的可读流实现
+        // 创建可读流
         const readable = new Readable({
-          read() {}, // 空实现，因为我们已经有了所有数据
+          read() {}, // 空实现，因为数据已经完整接收
         });
 
-        // 添加数据并结束流
+        // 写入数据并结束流
         readable.push(body);
         readable.push(null);
 
-        // 创建一个完整的事件发射器实现
+        // 创建事件发射器
         const streamEvents = new EventEmitter();
         const originalOn = readable.on.bind(readable);
         const originalRemoveListener = readable.removeListener.bind(readable);
 
-        // 替换原始请求的流，同时保留原始请求的其他属性
+        // 构造修改后的请求对象
         const modifiedReq = Object.assign({}, req, {
-          headers: req.headers, // 确保保留原始请求头
-          url: req.url, // 保留原始 URL
-          method: req.method, // 保留原始方法
+          headers: req.headers,    // 保留原始请求头
+          url: req.url,           // 保留原始URL
+          method: req.method,     // 保留原始方法
           read: readable.read.bind(readable),
           pipe: readable.pipe.bind(readable),
           unpipe: readable.unpipe.bind(readable),
           pause: readable.pause.bind(readable),
           resume: readable.resume.bind(readable),
-          // 实现完整的事件监听器接口
+          // 实现事件监听接口
           on: (event: string, listener: (...args: unknown[]) => void) => {
             streamEvents.on(event, listener);
             originalOn(event, listener);
@@ -260,8 +347,6 @@ class BrowserMonitorServer {
           },
           emit: streamEvents.emit.bind(streamEvents),
         });
-
-        console.log('修改后的请求头:', JSON.stringify(modifiedReq.headers, null, 2));
 
         try {
           console.log('开始处理 POST 消息...');
@@ -289,11 +374,18 @@ class BrowserMonitorServer {
     }
   }
 
+  /**
+   * 处理SSE连接请求
+   * 建立和管理SSE长连接
+   * 
+   * @param req - HTTP请求对象
+   * @param res - HTTP响应对象
+   */
   private handleSSE(_req: IncomingMessage, res: ServerResponse): void {
     try {
       console.log('处理新的 SSE 连接请求');
 
-      // 创建新的传输实例
+      // 创建SSE传输实例
       this.transport = new SSEServerTransport('/sse', res);
       console.log('创建了新的 SSE 传输实例');
 
@@ -304,7 +396,7 @@ class BrowserMonitorServer {
         this.eventEmitter.emit('client_disconnect');
       });
 
-      // 连接到 MCP 服务器
+      // 连接到MCP服务器
       console.log('正在连接到 MCP 服务器...');
       this.server
         .connect(this.transport)
@@ -327,13 +419,25 @@ class BrowserMonitorServer {
     }
   }
 
+  /**
+   * 启动服务器
+   * 开始监听HTTP请求并处理客户端连接
+   * 
+   * 功能：
+   * 1. 创建HTTP服务器
+   * 2. 配置CORS
+   * 3. 处理SSE和POST请求
+   * 4. 监听服务器错误
+   * 
+   * @throws 如果服务器启动失败
+   */
   async start(): Promise<void> {
     try {
-      // 创建 HTTP 服务器
+      // 创建HTTP服务器
       const server = createServer((req: IncomingMessage, res: ServerResponse) => {
         console.log(`收到${req.method}请求:`, req.url);
 
-        // 设置 CORS 头
+        // 设置CORS头
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -346,11 +450,11 @@ class BrowserMonitorServer {
           return;
         }
 
-        // 解析 URL 和查询参数
+        // 解析URL
         const urlParts = req.url?.split('?')[0];
         console.log('解析后的路径:', urlParts);
 
-        // 根据请求方法和路径处理请求
+        // 根据路径处理请求
         if (urlParts === '/sse') {
           if (req.method === 'GET') {
             console.log('处理 SSE GET 请求');
@@ -376,7 +480,7 @@ class BrowserMonitorServer {
         }
       });
 
-      // 启动 HTTP 服务器
+      // 启动服务器
       server.listen(8765, () => {
         console.log('浏览器监控服务已启动，监听端口: 8765');
       });
@@ -392,5 +496,5 @@ class BrowserMonitorServer {
   }
 }
 
-// 启动服务器
+// 启动服务器实例
 new BrowserMonitorServer().start().catch(console.error);

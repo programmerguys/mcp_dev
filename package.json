@@ -27,7 +27,7 @@
     "lint": "biome lint .",
     "check": "biome check --apply .",
     "check:ci": "biome ci .",
-    "fix": "biome check --apply-unsafe .",
+    "fix": "biome check --write --unsafe .",
     "format:check": "biome format --check ."
   },
   "dependencies": {
